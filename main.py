@@ -37,10 +37,10 @@ class ContextManagerPlugin(Star):
             # 删除最后一条AI回复
             removed_ai_response = history.pop(ai_response_index)
             
-            # 保存修改后的历史记录 - 明确传递 conversation_id 和 history
+            # 保存修改后的历史记录
             await self.context.conversation_manager.update_conversation(
-                conversation_id=conversation.id,  # 使用 conversation.id 作为 conversation_id
-                history=json.dumps(history)  # 序列化后的历史记录
+                conversation_id=curr_cid,
+                history=json.dumps(history)
             )
             
             # 获取最后一条用户消息作为新的提示
@@ -99,7 +99,6 @@ class ContextManagerPlugin(Star):
                 return
             
             # 删除AI回复和用户消息
-            # 先删除索引较大的，以免影响索引
             if ai_response_index > user_message_index:
                 history.pop(ai_response_index)
                 history.pop(user_message_index)
@@ -107,10 +106,10 @@ class ContextManagerPlugin(Star):
                 history.pop(user_message_index)
                 history.pop(ai_response_index)
             
-            # 保存修改后的历史记录 - 明确传递 conversation_id 和 history
+            # 保存修改后的历史记录
             await self.context.conversation_manager.update_conversation(
-                conversation_id=conversation.id,  # 使用 conversation.id 作为 conversation_id
-                history=json.dumps(history)  # 序列化后的历史记录
+                conversation_id=curr_cid,
+                history=json.dumps(history)
             )
             
             yield event.plain_result("已成功删除最后一条交互")
@@ -122,3 +121,4 @@ class ContextManagerPlugin(Star):
     async def terminate(self):
         """插件终止时调用"""
         logger.info("ContextManagerPlugin 已终止")
+
