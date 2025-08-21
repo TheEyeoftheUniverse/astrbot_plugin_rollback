@@ -37,9 +37,11 @@ class ContextManagerPlugin(Star):
             # 删除最后一条AI回复
             removed_ai_response = history.pop(ai_response_index)
             
-            # 保存修改后的历史记录
-            conversation.history = json.dumps(history)
-            await self.context.conversation_manager.update_conversation(conversation)
+            # 保存修改后的历史记录 - 明确传递 conversation_id 和 history
+            await self.context.conversation_manager.update_conversation(
+                conversation_id=conversation.id,  # 使用 conversation.id 作为 conversation_id
+                history=json.dumps(history)  # 序列化后的历史记录
+            )
             
             # 获取最后一条用户消息作为新的提示
             user_messages = [msg for msg in history if msg.get("role") == "user"]
@@ -105,9 +107,11 @@ class ContextManagerPlugin(Star):
                 history.pop(user_message_index)
                 history.pop(ai_response_index)
             
-            # 保存修改后的历史记录
-            conversation.history = json.dumps(history)
-            await self.context.conversation_manager.update_conversation(conversation)
+            # 保存修改后的历史记录 - 明确传递 conversation_id 和 history
+            await self.context.conversation_manager.update_conversation(
+                conversation_id=conversation.id,  # 使用 conversation.id 作为 conversation_id
+                history=json.dumps(history)  # 序列化后的历史记录
+            )
             
             yield event.plain_result("已成功删除最后一条交互")
             
