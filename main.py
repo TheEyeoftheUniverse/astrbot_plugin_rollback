@@ -62,7 +62,7 @@ class ContextManagerPlugin(Star):
             logger.error(f"roll_context error: {str(e)}")
             yield event.plain_result(f"执行回滚时发生错误: {str(e)}")
     
-    @filter.command("del")
+    @filter.command("dellast")
     async def delete_last_interaction(self, event: AstrMessageEvent):
         """删除最后一条AI回复和对应的用户指令"""
         try:
