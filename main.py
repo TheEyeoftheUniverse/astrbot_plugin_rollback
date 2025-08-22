@@ -111,6 +111,7 @@ class ConversationManagerPlugin(Star):
     @filter.on_llm_request(priority=999)
     async def handle_roll_llm_request(self, event: AstrMessageEvent, req):
         """处理roll操作的LLM请求"""
+        # 检查这是否是一个roll操作
         uid = event.unified_msg_origin
         curr_cid = await self.context.conversation_manager.get_curr_conversation_id(uid)
         
@@ -120,12 +121,13 @@ class ConversationManagerPlugin(Star):
         roll_key = f"{uid}_{curr_cid}"
         if roll_key in self.roll_states:
             # 这是一个roll操作，确保使用清理后的消息内容
-            roll_state = self.roll_states[roll_key]
+            roll_state = self.roll_states.pop(roll_key)  # 使用后立即移除状态
             req.prompt = roll_state["clean_user_msg"]
+            logger.info(f"处理roll操作的LLM请求: {roll_key}")
     
     @filter.command("dellast")
     async def delete_last_interaction_cmd(self, event: AstrMessageEvent):
-        """删除最后一组对话记录"""
+        """删除最后一组用户-助手交互"""
         try:
             # 获取当前会话和对话ID
             uid = event.unified_msg_origin
@@ -156,7 +158,7 @@ class ConversationManagerPlugin(Star):
             # 更新对话历史
             await self.context.conversation_manager.update_conversation(uid, curr_cid, new_history)
             
-            logger.info(f"删除最后一组对话记录")
+            logger.info(f"删除最后一次交互")
             
             yield event.plain_result("已删除最后一组对话记录")
             
