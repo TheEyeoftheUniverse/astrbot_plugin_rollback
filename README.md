@@ -1,7 +1,7 @@
 # rollback
 
-roll 让大模型重新回复
-dellast 从上下文中删除最后一组与大模型的交互记录
+roll 重新请求LLM回复最后一条用户消息/n
+dellast 删除最后一组对话记录
 
 # 支持
 
