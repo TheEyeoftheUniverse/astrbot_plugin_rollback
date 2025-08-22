@@ -1,8 +1,8 @@
 # rollback
 
-roll 重新请求LLM回复最后一条用户消息
+roll：重新请求LLM回复最后一条用户消息
 
-dellast 删除最后一组对话记录
+dellast：删除最后一组对话记录
 
 # 支持
 
