@@ -6,7 +6,7 @@ from astrbot.api.event import filter, AstrMessageEvent, MessageEventResult
 from astrbot.api.star import Context, Star, register
 from astrbot.api import logger
 
-@register("conversation_manager", "TEOTU", "rollback", "1.0.0")
+@register("rollback", "TEOTU", "重新请求llm回复最后一条用户消息或删除最后一组对话记录的插件", "1.0.0")
 class ConversationManagerPlugin(Star):
     def __init__(self, context: Context):
         super().__init__(context)
