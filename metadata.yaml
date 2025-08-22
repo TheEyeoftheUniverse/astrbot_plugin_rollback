@@ -1,5 +1,5 @@
 name: rollback # 这是你的插件的唯一识别名。
-desc: 用于roll回复或删除上一条回复的插件 # 插件简短描述
+desc: 重新请求llm回复最后一条用户消息或删除最后一组对话记录的插件 # 插件简短描述
 version: v1.0 # 插件版本号。格式：v1.1.1 或者 v1.1
 author: TEOTU # 作者
 repo: https://github.com/TheEyeoftheUniverse/astrbot_plugin_rollback # 插件的仓库地址
