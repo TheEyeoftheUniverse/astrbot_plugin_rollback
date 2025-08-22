@@ -1,4 +1,6 @@
 import json
+import time
+import re
 from typing import List, Dict
 from astrbot.api.event import filter, AstrMessageEvent, MessageEventResult
 from astrbot.api.star import Context, Star, register
@@ -8,6 +10,43 @@ from astrbot.api import logger
 class ConversationManagerPlugin(Star):
     def __init__(self, context: Context):
         super().__init__(context)
+        # 存储roll操作的状态
+        self.roll_states = {}
+    
+    def extract_clean_message(self, content):
+        """从消息内容中提取干净的消息文本，移除 [User ID: Nickname:] 元数据"""
+        # 匹配 [User ID:.*?Nickname:.*?] 格式的元数据
+        pattern = r'\[User ID:.*?Nickname:.*?\](.*)'
+        match = re.search(pattern, content, re.DOTALL)
+        
+        if match:
+            return match.group(1).strip()
+        
+        # 如果没有匹配到元数据格式，返回原始内容
+        return content
+    
+    def find_last_interaction(self, history):
+        """查找最后一次交互的用户消息和助手回复的索引"""
+        last_user_index = -1
+        last_assistant_index = -1
+        
+        for i in range(len(history)-1, -1, -1):
+            if history[i]["role"] == "assistant" and last_assistant_index == -1:
+                last_assistant_index = i
+            elif history[i]["role"] == "user" and last_user_index == -1:
+                last_user_index = i
+                break
+        
+        return last_user_index, last_assistant_index
+    
+    def delete_last_interaction(self, history, last_user_index, last_assistant_index):
+        """删除最后一次交互"""
+        if last_assistant_index != -1 and last_assistant_index > last_user_index:
+            # 删除助手回复和用户消息
+            return history[:last_user_index]
+        else:
+            # 没有找到助手回复，只删除用户消息
+            return history[:last_user_index]
     
     @filter.command("roll")
     async def roll_last_message(self, event: AstrMessageEvent):
@@ -29,64 +68,64 @@ class ConversationManagerPlugin(Star):
                 yield event.plain_result("对话历史为空")
                 return
             
-            # 查找最后一条用户消息
-            last_user_msg = None
-            last_user_index = -1
-            for i in range(len(history)-1, -1, -1):
-                if history[i]["role"] == "user":
-                    last_user_msg = history[i]["content"]
-                    last_user_index = i
-                    break
+            # 查找最后一次交互
+            last_user_index, last_assistant_index = self.find_last_interaction(history)
             
-            if not last_user_msg:
+            if last_user_index == -1:
                 yield event.plain_result("未找到用户消息")
                 return
             
-            # 删除这条用户消息之后的所有消息（包括助手回复）
-            truncated_history = history[:last_user_index]
+            # 提取干净的消息内容（移除元数据）
+            last_user_msg = history[last_user_index]["content"]
+            clean_user_msg = self.extract_clean_message(last_user_msg)
+            
+            # 删除最后一次交互
+            new_history = self.delete_last_interaction(history, last_user_index, last_assistant_index)
             
             # 更新对话历史
-            await self.context.conversation_manager.update_conversation(uid, curr_cid, truncated_history)
+            await self.context.conversation_manager.update_conversation(uid, curr_cid, new_history)
             
-            # 重新请求LLM - 使用底层API调用以便获取响应
-            provider = self.context.get_using_provider()
-            if not provider:
-                yield event.plain_result("未找到可用的LLM提供商")
-                return
+            # 获取更新后的对话对象
+            updated_conversation = await self.context.conversation_manager.get_conversation(uid, curr_cid)
             
-            # 使用底层API调用LLM
-            llm_response = await provider.text_chat(
-                prompt=last_user_msg,
+            # 存储roll操作的状态
+            roll_key = f"{uid}_{curr_cid}"
+            self.roll_states[roll_key] = {
+                "clean_user_msg": clean_user_msg,
+                "conversation": updated_conversation,
+            }
+            
+            logger.info(f"Roll操作: 重新请求最后一条用户消息")
+            
+            # 使用AstrBot的事件系统触发完整的LLM处理流程
+            yield event.request_llm(
+                prompt=clean_user_msg,
                 session_id=curr_cid,
-                contexts=truncated_history,
-                func_tool=self.context.get_llm_tool_manager(),
-                system_prompt=getattr(conversation, 'system_prompt', "") or ""
+                conversation=updated_conversation
             )
-            
-            # 处理LLM响应
-            if llm_response.role == "assistant":
-                # 手动发送LLM回复
-                yield event.plain_result(llm_response.completion_text)
-                
-                # 更新对话历史，添加用户消息和助手回复
-                new_history = truncated_history + [
-                    {"role": "user", "content": last_user_msg},
-                    {"role": "assistant", "content": llm_response.completion_text}
-                ]
-                await self.context.conversation_manager.update_conversation(uid, curr_cid, new_history)
-            elif llm_response.role == "tool":
-                # 处理函数调用
-                yield event.plain_result(f"触发了函数调用: {llm_response.tools_call_name}")
-            else:
-                yield event.plain_result("LLM响应格式未知")
             
         except Exception as e:
             logger.error(f"roll命令执行错误: {str(e)}")
             yield event.plain_result(f"执行失败: {str(e)}")
     
+    @filter.on_llm_request(priority=999)
+    async def handle_roll_llm_request(self, event: AstrMessageEvent, req):
+        """处理roll操作的LLM请求"""
+        uid = event.unified_msg_origin
+        curr_cid = await self.context.conversation_manager.get_curr_conversation_id(uid)
+        
+        if not curr_cid:
+            return
+        
+        roll_key = f"{uid}_{curr_cid}"
+        if roll_key in self.roll_states:
+            # 这是一个roll操作，确保使用清理后的消息内容
+            roll_state = self.roll_states[roll_key]
+            req.prompt = roll_state["clean_user_msg"]
+    
     @filter.command("dellast")
-    async def delete_last_interaction(self, event: AstrMessageEvent):
-        """删除最后一组用户-助手交互"""
+    async def delete_last_interaction_cmd(self, event: AstrMessageEvent):
+        """删除最后一组对话记录"""
         try:
             # 获取当前会话和对话ID
             uid = event.unified_msg_origin
@@ -104,22 +143,20 @@ class ConversationManagerPlugin(Star):
                 yield event.plain_result("对话历史为空")
                 return
             
-            # 查找最后一组完整的交互（用户消息+助手回复）
-            last_user_index = -1
-            for i in range(len(history)-1, -1, -1):
-                if history[i]["role"] == "user":
-                    last_user_index = i
-                    break
+            # 查找最后一次交互
+            last_user_index, last_assistant_index = self.find_last_interaction(history)
             
             if last_user_index == -1:
                 yield event.plain_result("未找到用户消息")
                 return
             
-            # 删除从最后一条用户消息开始的所有记录
-            new_history = history[:last_user_index]
+            # 删除最后一次交互
+            new_history = self.delete_last_interaction(history, last_user_index, last_assistant_index)
             
             # 更新对话历史
             await self.context.conversation_manager.update_conversation(uid, curr_cid, new_history)
+            
+            logger.info(f"删除最后一组对话记录")
             
             yield event.plain_result("已删除最后一组对话记录")
             
@@ -129,4 +166,5 @@ class ConversationManagerPlugin(Star):
     
     async def terminate(self):
         """插件终止时调用"""
-        pass
+        # 清理所有roll状态
+        self.roll_states.clear()
